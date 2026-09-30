@@ -1,0 +1,17 @@
+[
+ {"id":"license","name":"駕駛執照與考照"},
+ {"id":"vehicle","name":"牌照與車輛檢驗"},
+ {"id":"speed","name":"行車速度與安全距離"},
+ {"id":"lane","name":"車道、轉彎與路口"},
+ {"id":"overtake","name":"超車、會車與讓道"},
+ {"id":"park","name":"停車與臨時停車"},
+ {"id":"helmet","name":"安全帽、載人與裝載"},
+ {"id":"drunk","name":"酒駕、毒駕與稽查"},
+ {"id":"accident","name":"事故處理與肇事責任"},
+ {"id":"signal","name":"號誌與交通指揮"},
+ {"id":"sign","name":"標誌"},
+ {"id":"line","name":"標線"},
+ {"id":"ped","name":"行人與特殊路段"},
+ {"id":"penalty","name":"罰則與處理程序"},
+ {"id":"light","name":"燈光、喇叭與行車裝備"}
+]
