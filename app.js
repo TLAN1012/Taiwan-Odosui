@@ -31,7 +31,8 @@ async function boot() {
   if ("serviceWorker" in navigator && location.protocol.startsWith("http")) navigator.serviceWorker.register("sw.js").catch(() => {});
 }
 
-function applyTheme() { if (P.theme) document.documentElement.dataset.theme = P.theme; else delete document.documentElement.dataset.theme; }
+function applyTheme() {
+  document.documentElement.style.setProperty("--fs", (P.fs || 19) + "px"); if (P.theme) document.documentElement.dataset.theme = P.theme; else delete document.documentElement.dataset.theme; }
 function stat(id) { return P.stats[id] || (P.stats[id] = { ok: 0, ng: 0, last: null }); }
 function record(id, ok) { const s = stat(id); ok ? s.ok++ : s.ng++; s.last = ok; save(LS, P); }
 function wrongIds() { return QS.filter(q => P.stats[q.id] && P.stats[q.id].last === false).map(q => q.id); }
@@ -329,11 +330,14 @@ function aboutView() {
   <p>條文來源：全國法規資料庫（政府資料開放授權條款第 1 版）。已公布但尚未施行的修正條文，本程式以現行有效條文為準並另行標示。</p>
   <p>自編題主題分布：${byTopic}。</p>
   <p>考試規格設定：${EXAM.count} 題、每題 ${EXAM.perQ} 分、${EXAM.minutes} 分鐘、${EXAM.pass} 分及格，依公開資訊設定，請以監理站公告為準。</p></div>
+  <div class="card row"><span>字體大小</span>
+  <button data-fs="17">標準</button><button data-fs="19">大</button><button data-fs="22">特大</button></div>
   <div class="card row"><span>外觀</span>
   <button data-theme="">跟隨系統</button><button data-theme="light">淺色</button><button data-theme="dark">深色</button></div>
   <div class="card row"><button id="reset">清除我的作答紀錄</button><span class="muted small">只清除這台裝置上的紀錄</span></div>`;
+  $app.querySelectorAll("[data-fs]").forEach(b => b.onclick = () => { P.fs = +b.dataset.fs; save(LS, P); applyTheme(); });
   $app.querySelectorAll("[data-theme]").forEach(b => b.onclick = () => { P.theme = b.dataset.theme; save(LS, P); applyTheme(); });
-  document.getElementById("reset").onclick = () => { if (confirm("確定清除所有作答紀錄？")) { P = { stats: {}, marks: [], history: [], theme: P.theme }; save(LS, P); home(); } };
+  document.getElementById("reset").onclick = () => { if (confirm("確定清除所有作答紀錄？")) { P = { stats: {}, marks: [], history: [], theme: P.theme, fs: P.fs }; save(LS, P); home(); } };
 }
 
 boot();
