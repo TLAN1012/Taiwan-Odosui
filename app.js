@@ -4,7 +4,7 @@ const EXAM = { count: 50, perQ: 2, pass: 85, minutes: 30 };
 const LS = "odosui.v1", LS_EXAM = "odosui.exam";
 
 const $app = document.getElementById("app");
-let LAWS = null, QS = [], TOPICS = [], QMAP = {}, LAWMAP = {};
+let LAWS = null, QS = [], TOPICS = [], QMAP = {}, LAWMAP = {}, OFF = null;
 let P = load(LS, { stats: {}, marks: [], history: [], theme: "" });
 let session = null, timerId = null;
 
@@ -18,8 +18,9 @@ const mmss = s => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 6
 async function boot() {
   applyTheme();
   try {
-    const [l, q] = await Promise.all([fetch("data/laws.json").then(r => r.json()), fetch("data/questions.json").then(r => r.json())]);
-    LAWS = l; QS = q.questions; TOPICS = q.topics;
+    const [l, q, o] = await Promise.all(["laws", "questions", "official"].map(n => fetch(`data/${n}.json`).then(r => r.json())));
+    LAWS = l; TOPICS = q.topics; OFF = o;
+    QS = q.questions.map(x => ({ ...x, src: "self" })).concat(o.questions.map(x => ({ ...x, src: "official", topic: "official" })));
     QS.forEach(x => QMAP[x.id] = x);
     LAWS.laws.forEach(law => { LAWMAP[law.pcode] = law; law.byNo = {}; law.articles.forEach(a => law.byNo[a.no] = a); });
   } catch (e) {
@@ -62,7 +63,7 @@ function home() {
   </div>
   ${last ? `<div class="card small">上次模擬考：<b class="${last.passed ? "pass" : "fail"}">${last.score} 分（${last.passed ? "及格" : "未及格"}）</b>，${esc(last.date)}</div>` : ""}
   <div class="grid">
-    <a class="card btn" href="#/practice"><h3>逐題練習</h3><span class="muted small">依主題，答完立刻看詳解與條文</span></a>
+    <a class="card btn" href="#/practice"><h3>逐題練習</h3><span class="muted small">官方題庫或自編題，答完立刻對答案</span></a>
     <a class="card btn" href="#/exam"><h3>模擬考</h3><span class="muted small">${EXAM.count} 題、${EXAM.minutes} 分鐘、${EXAM.pass} 分及格</span></a>
     <a class="card btn" href="#/laws"><h3>條文查詢</h3><span class="muted small">處罰條例、安全規則、標誌標線設置規則</span></a>
     <a class="card btn" href="#/wrong"><h3>錯題本</h3><span class="muted small">只練答錯過的題</span></a>
@@ -71,30 +72,43 @@ function home() {
 }
 
 function practiceMenu() {
-  const counts = t => QS.filter(q => q.topic === t);
+  const counts = t => QS.filter(q => q.src === "self" && q.topic === t), off = OFFQ();
   $app.innerHTML = `<h1>逐題練習</h1>
   <div class="card list">
     <a class="item" href="#/practice/run?topic=all&n=20"><b>綜合隨機 20 題</b></a>
     <a class="item" href="#/practice/run?topic=new&n=20"><b>還沒練過的 20 題</b></a>
     <a class="item" href="#/practice/run?topic=marks&n=50"><b>我的收藏</b> <span class="muted small">${P.marks.length} 題</span></a>
   </div>
-  <h2>依主題</h2>
+  <h2>官方題庫（${OFF.version}，${off.length} 題，三選一）</h2>
+  <div class="card list">
+    <a class="item" href="#/practice/run?topic=off&n=20"><b>官方題庫隨機 20 題</b></a>
+    <a class="item" href="#/practice/run?topic=offimg&n=20"><b>圖片題（標誌、標線、號誌、手勢）</b> <span class="muted small">${off.filter(q => q.image).length} 題</span></a>
+    ${OFF.cats.map(c => `<a class="item" href="#/practice/run?topic=${encodeURIComponent("cat:" + c)}&n=20"><b>${esc(c)}</b> <span class="muted small">${off.filter(q => q.cat === c).length} 題</span></a>`).join("")}
+  </div>
+  <h2>自編題依主題（依條文編寫，附詳解）</h2>
   <div class="card list">${TOPICS.map(t => {
     const qs = counts(t.id), s = qs.filter(q => P.stats[q.id]), ok = qs.filter(q => P.stats[q.id] && P.stats[q.id].last).length;
     return `<a class="item" href="#/practice/run?topic=${t.id}&n=${qs.length}"><b>${esc(t.name)}</b> <span class="muted small">${qs.length} 題・已練 ${s.length}・最近答對 ${ok}</span></a>`;
   }).join("")}</div>`;
 }
 
+const OFFQ = () => QS.filter(q => q.src === "official");
 function pickPool(topic) {
   if (topic === "all") return QS;
+  if (topic === "off") return OFFQ();
+  if (topic === "offimg") return OFFQ().filter(q => q.image);
+  if (topic.startsWith("cat:")) return OFFQ().filter(q => q.cat === topic.slice(4));
+  if (topic === "self") return QS.filter(q => q.src === "self");
   if (topic === "new") return QS.filter(q => !P.stats[q.id]);
   if (topic === "marks") return QS.filter(q => P.marks.includes(q.id));
   if (topic === "wrong") return QS.filter(q => wrongIds().includes(q.id));
-  return QS.filter(q => q.topic === topic);
+  return QS.filter(q => q.src === "self" && q.topic === topic);
 }
 
+const isAll = t => /^以上/.test(t) && t.length <= 8;
 function makeItem(q) {
-  const order = shuffle([0, 1, 2, 3]);
+  const idx = q.options.map((_, i) => i);
+  const order = shuffle(idx.filter(i => !isAll(q.options[i]))).concat(idx.filter(i => isAll(q.options[i])));
   return { id: q.id, order, pick: null };
 }
 
@@ -105,6 +119,10 @@ function practiceRun(qs) {
   session = { mode: "practice", topic, items: pool.map(makeItem), i: 0 };
   renderPractice();
 }
+
+const qHtml = q => `<div class="qtext">${q.image ? `<img class="qimg" src="${esc(q.image)}" alt="題目圖片">` : ""}${q.q ? esc(q.q) : (q.image ? `<span class="muted">請依圖作答</span>` : "")}</div>`;
+const qLabel = q => q.src === "official" ? `官方題庫・${q.cat}` : ((TOPICS.find(t => t.id === q.topic) || {}).name || "");
+const explainHtml = q => q.src === "official" ? `<p class="muted small">官方題庫沒有提供詳解與條文出處。</p>` : `<p>${esc(q.explain)}</p>${refsHtml(q, true)}`;
 
 function optionsHtml(q, it, reveal) {
   return it.order.map((oi, k) => {
@@ -140,13 +158,13 @@ function renderPractice() {
   const s = session, it = s.items[s.i], q = QMAP[it.id], reveal = it.pick !== null;
   const ok = reveal && it.pick === q.answer;
   $app.innerHTML = `
-  <div class="row spread small muted"><span>第 ${s.i + 1} / ${s.items.length} 題</span><span>${esc((TOPICS.find(t => t.id === q.topic) || {}).name || "")}</span></div>
+  <div class="row spread small muted"><span>第 ${s.i + 1} / ${s.items.length} 題</span><span>${esc(qLabel(q))}</span></div>
   <div class="bar"><i style="width:${(s.i + (reveal ? 1 : 0)) * 100 / s.items.length}%"></i></div>
   <div class="card">
-    <div class="qtext">${esc(q.q)}</div>
+    ${qHtml(q)}
     <div id="opts">${optionsHtml(q, it, reveal)}</div>
     ${reveal ? `<div class="explain"><div class="verdict ${ok ? "ok" : "bad"}">${ok ? "答對了" : "答錯了，正確答案是 " + "ABCD"[it.order.indexOf(q.answer)]}</div>
-      <p>${esc(q.explain)}</p>${refsHtml(q, true)}</div>` : ""}
+      ${explainHtml(q)}</div>` : ""}
   </div>
   <div class="row spread">
     <button id="mark">${P.marks.includes(q.id) ? "★ 已收藏" : "☆ 收藏"}</button>
@@ -171,15 +189,18 @@ function examMenu() {
   const saved = load(LS_EXAM, null);
   const hist = P.history.slice(-8).reverse();
   $app.innerHTML = `<h1>模擬考</h1>
-  <div class="card"><p>${EXAM.count} 題四選一、每題 ${EXAM.perQ} 分、限時 ${EXAM.minutes} 分鐘，${EXAM.pass} 分以上及格（至少答對 ${Math.ceil(EXAM.pass / EXAM.perQ)} 題）。交卷前不顯示對錯。</p>
-  <div class="row"><button class="primary" id="go">開始考試</button>${saved ? `<button id="resume">繼續上次未交卷（剩 ${mmss(Math.max(0, saved.endAt - Date.now() > 0 ? Math.round((saved.endAt - Date.now()) / 1000) : 0))}）</button>` : ""}</div>
-  ${QS.length < EXAM.count ? `<p class="warn small">目前題庫只有 ${QS.length} 題，不足 ${EXAM.count} 題，這次會用全部題目出題。</p>` : ""}</div>
+  <div class="card"><p>${EXAM.count} 題、每題 ${EXAM.perQ} 分、限時 ${EXAM.minutes} 分鐘，${EXAM.pass} 分以上及格（至少答對 ${Math.ceil(EXAM.pass / EXAM.perQ)} 題）。交卷前不顯示對錯。</p>
+  <div class="row"><button class="primary" id="go">官方題庫模擬考（三選一）</button><button id="go-self">自編題模擬考（四選一，交卷後有詳解）</button></div>
+  <div class="row" style="margin-top:8px">${saved ? `<button id="resume">繼續上次未交卷（剩 ${mmss(Math.max(0, saved.endAt - Date.now() > 0 ? Math.round((saved.endAt - Date.now()) / 1000) : 0))}）</button>` : ""}</div>
+  </div></div>
   ${hist.length ? `<h2>最近成績</h2><div class="card list">${hist.map(h => `<div class="item row spread"><span>${esc(h.date)}</span><b class="${h.passed ? "pass" : "fail"}">${h.score} 分 ${h.passed ? "及格" : "未及格"}</b></div>`).join("")}</div>` : ""}`;
-  document.getElementById("go").onclick = () => {
-    const ids = shuffle(QS).slice(0, EXAM.count);
-    session = { mode: "exam", items: ids.map(makeItem), i: 0, endAt: Date.now() + EXAM.minutes * 60000, startedAt: Date.now() };
+  const start = pool => {
+    const qs = shuffle(pickPool(pool)).slice(0, EXAM.count);
+    session = { mode: "exam", items: qs.map(makeItem), i: 0, endAt: Date.now() + EXAM.minutes * 60000, startedAt: Date.now() };
     save(LS_EXAM, session); location.hash = "#/exam/run";
   };
+  document.getElementById("go").onclick = () => start("off");
+  document.getElementById("go-self").onclick = () => start("self");
   const r = document.getElementById("resume");
   if (r) r.onclick = () => { session = saved; location.hash = "#/exam/run"; };
 }
@@ -202,7 +223,7 @@ function renderExam() {
   $app.innerHTML = `
   <div class="row spread"><span class="small muted">已答 ${answered} / ${s.items.length}</span><span class="timer ${left < 300 ? "low" : ""}" id="timer">${mmss(left)}</span></div>
   <div class="qnav">${s.items.map((x, k) => `<button data-go="${k}" class="${x.pick !== null ? "done" : ""} ${k === s.i ? "cur" : ""}">${k + 1}</button>`).join("")}</div>
-  <div class="card"><div class="small muted">第 ${s.i + 1} 題</div><div class="qtext">${esc(q.q)}</div><div>${optionsHtml(q, it, false)}</div></div>
+  <div class="card"><div class="small muted">第 ${s.i + 1} 題</div>${qHtml(q)}<div>${optionsHtml(q, it, false)}</div></div>
   <div class="row spread">
     <span class="row">${s.i > 0 ? `<button id="prev">上一題</button>` : ""}${s.i < s.items.length - 1 ? `<button id="next" class="primary">下一題</button>` : ""}</span>
     <button id="submit">交卷</button>
@@ -223,7 +244,7 @@ function finishExam() {
   const s = session; if (!s) return;
   const right = s.items.filter(x => x.pick === QMAP[x.id].answer).length;
   s.items.forEach(x => { if (x.pick !== null) record(x.id, x.pick === QMAP[x.id].answer); else record(x.id, false); });
-  const perQ = QS.length < EXAM.count ? 100 / s.items.length : EXAM.perQ;
+  const perQ = s.items.length < EXAM.count ? 100 / s.items.length : EXAM.perQ;
   const score = Math.round(right * perQ * 10) / 10;
   const result = { date: new Date().toLocaleString("zh-TW", { hour12: false }), score, right, total: s.items.length, passed: score >= EXAM.pass, secs: Math.round((Date.now() - s.startedAt) / 1000), items: s.items };
   P.history.push({ date: result.date, score, right, total: result.total, passed: result.passed, secs: result.secs });
@@ -247,15 +268,15 @@ function examResult() {
 
 function reviewCard(it) {
   const q = QMAP[it.id], ok = it.pick === q.answer;
-  return `<div class="card"><div class="qtext">${esc(q.q)}</div>${optionsHtml(q, it, true)}
-    <div class="explain"><div class="verdict ${ok ? "ok" : "bad"}">${it.pick === null ? "未作答" : ok ? "答對" : "答錯"}，正確答案 ${"ABCD"[it.order.indexOf(q.answer)]}</div><p>${esc(q.explain)}</p>${refsHtml(q, true)}</div></div>`;
+  return `<div class="card">${qHtml(q)}${optionsHtml(q, it, true)}
+    <div class="explain"><div class="verdict ${ok ? "ok" : "bad"}">${it.pick === null ? "未作答" : ok ? "答對" : "答錯"}，正確答案 ${"ABCD"[it.order.indexOf(q.answer)]}</div>${explainHtml(q)}</div></div>`;
 }
 
 function wrongView() {
   const ids = wrongIds();
   $app.innerHTML = `<h1>錯題本</h1><div class="card"><p>最近一次答錯、還沒答對過的題：<b>${ids.length}</b> 題。答對後會自動移出。</p>
   ${ids.length ? `<a class="btn primary" href="#/practice/run?topic=wrong&n=30">開始複習</a>` : ""}</div>
-  ${ids.slice(0, 30).map(id => { const q = QMAP[id]; return `<div class="card small"><div>${esc(q.q)}</div><div class="muted">${refsHtml(q, false)}</div></div>`; }).join("")}`;
+  ${ids.slice(0, 30).map(id => { const q = QMAP[id]; return `<div class="card small">${q.image ? `<img class="qimg" style="max-height:120px" src="${esc(q.image)}" alt="題目圖片">` : ""}<div>${esc(q.q)}</div><div class="muted">${refsHtml(q, false)}</div></div>`; }).join("")}`;
 }
 
 function lawsView(pcode, no, qs) {
@@ -300,12 +321,13 @@ function lawsView(pcode, no, qs) {
 }
 
 function aboutView() {
-  const byTopic = TOPICS.map(t => `${esc(t.name)} ${QS.filter(q => q.topic === t.id).length}`).join("、");
+  const self = QS.filter(q => q.src === "self"), byTopic = TOPICS.map(t => `${esc(t.name)} ${self.filter(q => q.topic === t.id).length}`).join("、");
   $app.innerHTML = `<h1>關於</h1><div class="card small">
   <p><b>Taiwan-Odosui</b>：自用機車考照模擬程式（名字取自「歐托拜」（日語オートバイ，機車），大家都說尾字「敗」不好，改成 sui，美的意思）。</p>
-  <p>題目為依條文編寫的練習題，每題附出處條文與原文摘錄；<b>不是公路局官方題庫</b>。官方題庫與模擬考請至交通部公路局網站與監理服務網。</p>
+  <p><b>官方題庫</b>：${esc(OFF.source)}，共 ${OFF.questions.length} 題（三選一，其中 ${OFF.questions.filter(q => q.image).length} 題為圖片題），依${esc(OFF.license)}使用，資料來源為交通部公路局。官方題庫只有答案，沒有詳解；本站不改動題目文字，僅去除排版造成的多餘空白，並把「以上皆是」這類選項固定放在最後。</p>
+  <p><b>自編題</b>：依條文編寫的練習題 ${self.length} 題，每題附出處條文與原文摘錄，<b>不是公路局官方題庫</b>。</p>
   <p>條文來源：全國法規資料庫（政府資料開放授權條款第 1 版）。已公布但尚未施行的修正條文，本程式以現行有效條文為準並另行標示。</p>
-  <p>題庫題數：${QS.length}（${byTopic}）。</p>
+  <p>自編題主題分布：${byTopic}。</p>
   <p>考試規格設定：${EXAM.count} 題、每題 ${EXAM.perQ} 分、${EXAM.minutes} 分鐘、${EXAM.pass} 分及格，依公開資訊設定，請以監理站公告為準。</p></div>
   <div class="card row"><span>外觀</span>
   <button data-theme="">跟隨系統</button><button data-theme="light">淺色</button><button data-theme="dark">深色</button></div>

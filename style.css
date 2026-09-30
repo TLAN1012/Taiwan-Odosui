@@ -53,3 +53,5 @@ input[type=search],select{font:inherit;width:100%;padding:10px 12px;border-radiu
 .list a.item:last-child{border-bottom:0}
 .score{font-size:44px;font-weight:800}
 .pass{color:var(--ok)}.fail{color:var(--bad)}
+
+.qimg{display:block;max-width:100%;max-height:260px;margin:0 auto 10px;background:#fff;border-radius:6px}
